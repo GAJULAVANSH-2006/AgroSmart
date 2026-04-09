@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { ImageUpload } from "@/components/image-upload"
 import { AiResultPanel, type AnalysisResult } from "@/components/ai-result-panel"
 import { Button } from "@/components/ui/button"
-import { Sparkles, History, Info, Zap } from "lucide-react"
+import { Sparkles, History, Info, Zap, Cpu } from "lucide-react"
+import { analyzeImageWithGemini } from "@/lib/gemini"
 
 const MOCK_RESULTS: AnalysisResult[] = [
   {
@@ -113,6 +114,8 @@ interface ScanEntry {
   name: string
   date: string
   status: string
+  timestamp: number
+  severity?: string
 }
 
 export function DiseaseDetection() {
@@ -120,47 +123,88 @@ export function DiseaseDetection() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const uploadedFileRef = useRef<File | null>(null)
   const [scanHistory, setScanHistory] = useState<ScanEntry[]>([
-    { name: "Tomato Leaf — Batch #12", date: "2 hours ago", status: "Late Blight" },
-    { name: "Rice Paddy Sample", date: "1 day ago", status: "Healthy" },
-    { name: "Wheat Leaf — Field A", date: "3 days ago", status: "Rust Detected" },
+    { name: "Tomato Leaf — Batch #12", date: "2 hours ago", status: "Late Blight", timestamp: Date.now() - 7200000, severity: "high" },
+    { name: "Rice Paddy Sample", date: "1 day ago", status: "Healthy", timestamp: Date.now() - 86400000 },
+    { name: "Wheat Leaf — Field A", date: "3 days ago", status: "Rust Detected", timestamp: Date.now() - 259200000, severity: "high" },
   ])
 
   const handleImageSelect = useCallback((_file: File, previewUrl: string) => {
     setPreview(previewUrl)
     setResult(null)
+    setAnalysisError(null)
     setIsPanelOpen(false)
+    uploadedFileRef.current = _file
   }, [])
 
   const handleClear = useCallback(() => {
     setPreview(null)
     setResult(null)
+    setAnalysisError(null)
     setIsPanelOpen(false)
+    uploadedFileRef.current = null
   }, [])
 
-  const handleAnalyze = useCallback(() => {
+  const handleAnalyze = useCallback(async () => {
     setIsAnalyzing(true)
     setIsPanelOpen(true)
     setResult(null)
+    setAnalysisError(null)
 
-    // Randomly select a result to make each analysis unique
-    const randomIndex = Math.floor(Math.random() * MOCK_RESULTS.length)
-    const selectedResult = MOCK_RESULTS[randomIndex]
+    let selectedResult: AnalysisResult
 
-    setTimeout(() => {
+    try {
+      const file = uploadedFileRef.current
+      const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY
+
+      if (file && apiKey) {
+        // Real AI analysis using OpenAI Vision
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            const result = e.target?.result as string
+            resolve(result.split(",")[1])
+          }
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+        selectedResult = await analyzeImageWithGemini(base64, file.type)
+      } else {
+        // Fallback to mock if no API key
+        await new Promise((r) => setTimeout(r, 2800))
+        const randomIndex = Math.floor(Math.random() * MOCK_RESULTS.length)
+        selectedResult = MOCK_RESULTS[randomIndex]
+      }
+    } catch (err: any) {
       setIsAnalyzing(false)
-      setResult(selectedResult)
+      setAnalysisError(err.message || "Analysis failed. Please try again.")
+      return
+    }
 
-      // Add to scan history
+    setIsAnalyzing(false)
+    setResult(selectedResult)
+
+      // Add to scan history (local + dashboard)
       const newEntry: ScanEntry = {
         name: `Crop Scan #${Math.floor(Math.random() * 900) + 100}`,
         date: "Just now",
         status: selectedResult.diseaseName.includes("Healthy")
           ? "Healthy"
           : selectedResult.diseaseName.split("(")[0].trim(),
+        timestamp: Date.now(),
+        severity: selectedResult.severity,
       }
       setScanHistory((prev) => [newEntry, ...prev].slice(0, 8))
-    }, 2800)
+
+      // Persist to localStorage for dashboard stats
+      try {
+        const raw = localStorage.getItem("agrosmart_scan_history")
+        const all = raw ? JSON.parse(raw) : []
+        all.unshift(newEntry)
+        localStorage.setItem("agrosmart_scan_history", JSON.stringify(all.slice(0, 100)))
+      } catch {}
   }, [])
 
   return (
@@ -213,14 +257,30 @@ export function DiseaseDetection() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="gap-2 rounded-xl border-border/50 text-foreground hover:bg-muted bg-transparent"
+                  className="gap-2 rounded-xl border-border/50 text-foreground hover:bg-muted bg-transparent disabled:opacity-40"
                   size="lg"
                   onClick={() => setIsPanelOpen(true)}
+                  disabled={!result && !isAnalyzing}
                 >
                   <Info className="h-4 w-4" />
                   View Results
                 </Button>
               </div>
+
+              {/* AI badge */}
+              <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Cpu className="h-3.5 w-3.5 text-primary" />
+                {process.env.NEXT_PUBLIC_OPENAI_API_KEY
+                  ? "Powered by GPT-4o Vision AI"
+                  : "Demo mode — add OpenAI API key for real AI"}
+              </div>
+
+              {/* Error */}
+              {analysisError && (
+                <div className="mt-3 rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-2.5 text-sm text-destructive">
+                  {analysisError}
+                </div>
+              )}
             </div>
           </div>
 

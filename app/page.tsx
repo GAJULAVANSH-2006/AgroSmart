@@ -16,10 +16,24 @@ import { MarketInsights } from "@/components/market-insights"
 import { SettingsPage } from "@/components/settings-page"
 import { BillingPage } from "@/components/billing-page"
 import { HelpCenterPage } from "@/components/help-center-page"
+import { FarmAdvisor } from "@/components/farm-advisor"
 
 function AppContent() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [activeSection, setActiveSection] = useState("dashboard")
+  const [activeSection, setActiveSection] = useState(() => {
+    try {
+      return localStorage.getItem("agrosmart_active_section") || "dashboard"
+    } catch {
+      return "dashboard"
+    }
+  })
+
+  const handleNavigate = (id: string) => {
+    setActiveSection(id)
+    try {
+      localStorage.setItem("agrosmart_active_section", id)
+    } catch {}
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -27,7 +41,7 @@ function AppContent() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
         activeSection={activeSection}
-        onNavigate={setActiveSection}
+        onNavigate={handleNavigate}
       />
 
       <div
@@ -36,11 +50,11 @@ function AppContent() {
           sidebarCollapsed ? "ml-[68px]" : "ml-[240px]"
         )}
       >
-        <AppHeader onNavigate={setActiveSection} />
+        <AppHeader onNavigate={handleNavigate} />
 
         <main className="flex flex-1 flex-col overflow-y-auto">
           {activeSection === "dashboard" && (
-            <DashboardContent onNavigate={setActiveSection} />
+            <DashboardContent onNavigate={handleNavigate} />
           )}
           {activeSection === "disease" && <DiseaseDetection />}
           {activeSection === "weather" && <WeatherForecast />}
@@ -91,5 +105,10 @@ export default function Home() {
   }
 
   // Logged in — show app
-  return <AppContent />
+  return (
+    <>
+      <AppContent />
+      <FarmAdvisor />
+    </>
+  )
 }

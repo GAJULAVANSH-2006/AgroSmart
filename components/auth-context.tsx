@@ -66,11 +66,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Initial check
+      // Initial check with a 3s timeout so a paused/slow Supabase project doesn't hang the app
+      const sessionTimeout = setTimeout(() => {
+        setIsLoading(false)
+      }, 3000)
+
       supabase.auth.getSession().then(({ data: { session } }) => {
+        clearTimeout(sessionTimeout)
         if (session) handleSession(session)
         setIsLoading(false)
       }).catch(() => {
+        clearTimeout(sessionTimeout)
         setIsLoading(false)
       })
 
@@ -81,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
       return () => {
+        clearTimeout(sessionTimeout)
         subscription.unsubscribe()
       }
     } else {
@@ -101,11 +108,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If Supabase is active, use it
     if (supabase) {
       try {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
-        if (error) return { success: false, error: error.message }
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) {
+          // Email not confirmed — fall through to local storage fallback
+          if (error.message.toLowerCase().includes("email not confirmed")) {
+            const usersRaw = localStorage.getItem("agrosmart_users")
+            const users: StoredUser[] = usersRaw ? JSON.parse(usersRaw) : []
+            const found = users.find(
+              (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+            )
+            if (found) {
+              const sessionUser: User = { name: found.name, email: found.email, phone: found.phone }
+              localStorage.setItem("agrosmart_session", JSON.stringify(sessionUser))
+              setUser(sessionUser)
+              return { success: true }
+            }
+          }
+          return { success: false, error: error.message }
+        }
         return { success: true }
       } catch (err: any) {
         return { success: false, error: err.message || "Failed to log in" }
@@ -138,18 +158,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // If Supabase is active, use it
     if (supabase) {
       try {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: {
-              name,
-              phone,
-            },
+            data: { name, phone },
           },
         })
         if (error) return { success: false, error: error.message }
-        return { success: true }
+
+        // Save to localStorage as fallback for unconfirmed users
+        try {
+          const usersRaw = localStorage.getItem("agrosmart_users")
+          const users: StoredUser[] = usersRaw ? JSON.parse(usersRaw) : []
+          if (!users.some((u) => u.email.toLowerCase() === email.toLowerCase())) {
+            users.push({ name, email, phone, password })
+            localStorage.setItem("agrosmart_users", JSON.stringify(users))
+          }
+        } catch {}
+
+        // If email confirmation is disabled, session is returned immediately — log user in
+        if (data.session) {
+          const sessionUser: User = {
+            id: data.session.user.id,
+            email: data.session.user.email || "",
+            name: data.session.user.user_metadata?.name || name,
+            phone: data.session.user.user_metadata?.phone || phone,
+          }
+          localStorage.setItem("agrosmart_session", JSON.stringify(sessionUser))
+          setUser(sessionUser)
+          return { success: true }
+        }
+
+        // Email confirmation required
+        return {
+          success: false,
+          error: "Account created! Please check your email to confirm your account, then log in.",
+        }
       } catch (err: any) {
         return { success: false, error: err.message || "Failed to create account" }
       }
@@ -180,7 +225,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     // Clear both remote and local
     if (supabase) {
-      await supabase.auth.signOut()
+      try {
+        await supabase.auth.signOut()
+      } catch {
+        // ignore
+      }
     }
     localStorage.removeItem("agrosmart_session")
     setUser(null)

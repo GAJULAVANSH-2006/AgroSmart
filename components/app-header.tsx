@@ -229,23 +229,25 @@ export function AppHeader({ onNavigate }: AppHeaderProps) {
               </Avatar>
               <div className="hidden flex-col items-start md:flex">
                 <span className="text-sm font-medium text-foreground">{user?.name || "Guest"}</span>
-                <span className="text-xs text-muted-foreground">Pro Plan</span>
+                <span className="text-xs text-muted-foreground">
+                  {(() => { try { return localStorage.getItem("agrosmart_plan") === "pro" ? "Pro Plan" : "Free Plan" } catch { return "Free Plan" } })()}
+                </span>
               </div>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48 bg-card border-border">
-            <DropdownMenuItem className="text-foreground focus:bg-muted cursor-pointer" onClick={() => onNavigate?.("settings")}>
+            <DropdownMenuItem className="text-foreground focus:bg-muted focus:text-foreground hover:bg-muted hover:text-foreground cursor-pointer" onClick={() => onNavigate?.("settings")}>
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-foreground focus:bg-muted cursor-pointer" onClick={() => onNavigate?.("billing")}>
+            <DropdownMenuItem className="text-foreground focus:bg-muted focus:text-foreground hover:bg-muted hover:text-foreground cursor-pointer" onClick={() => onNavigate?.("billing")}>
               Billing
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-foreground focus:bg-muted cursor-pointer" onClick={() => onNavigate?.("help")}>
+            <DropdownMenuItem className="text-foreground focus:bg-muted focus:text-foreground hover:bg-muted hover:text-foreground cursor-pointer" onClick={() => onNavigate?.("help")}>
               Help Center
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-border" />
-            <DropdownMenuItem className="text-destructive focus:bg-muted cursor-pointer" onClick={logout}>
+            <DropdownMenuItem className="text-destructive focus:bg-muted focus:text-destructive hover:bg-muted hover:text-destructive cursor-pointer" onClick={logout}>
               <LogOut className="h-4 w-4 mr-2" />
               Sign Out
             </DropdownMenuItem>

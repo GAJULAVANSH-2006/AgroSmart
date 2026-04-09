@@ -1,116 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import {
-  FlaskConical,
-  Droplets,
-  Leaf,
-  Zap,
-  TrendingUp,
-  ArrowDown,
-  ArrowUp,
-  Minus,
-  MapPin,
-  ChevronDown,
+  FlaskConical, Droplets, Leaf, Zap, TrendingUp,
+  ArrowDown, ArrowUp, Minus, MapPin, ChevronDown, Globe,
 } from "lucide-react"
 import {
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  RadialBarChart,
-  RadialBar,
+  PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar,
 } from "recharts"
-
-const fields = [
-  { id: "field-a", name: "Field A — Paddy", area: "2.5 acres" },
-  { id: "field-b", name: "Field B — Wheat", area: "3.0 acres" },
-  { id: "field-c", name: "Field C — Tomato", area: "1.2 acres" },
-]
-
-const soilData: Record<string, {
-  healthScore: number
-  nitrogen: number
-  phosphorus: number
-  potassium: number
-  ph: number
-  moisture: number
-  organicCarbon: number
-  sand: number
-  silt: number
-  clay: number
-  ec: number
-  zinc: number
-  iron: number
-  manganese: number
-  copper: number
-  boron: number
-  sulfur: number
-}> = {
-  "field-a": {
-    healthScore: 78,
-    nitrogen: 72,
-    phosphorus: 45,
-    potassium: 85,
-    ph: 6.5,
-    moisture: 68,
-    organicCarbon: 0.62,
-    sand: 40,
-    silt: 35,
-    clay: 25,
-    ec: 0.42,
-    zinc: 1.8,
-    iron: 8.2,
-    manganese: 3.5,
-    copper: 1.2,
-    boron: 0.6,
-    sulfur: 12.4,
-  },
-  "field-b": {
-    healthScore: 65,
-    nitrogen: 55,
-    phosphorus: 62,
-    potassium: 70,
-    ph: 7.2,
-    moisture: 52,
-    organicCarbon: 0.48,
-    sand: 50,
-    silt: 30,
-    clay: 20,
-    ec: 0.38,
-    zinc: 1.4,
-    iron: 6.8,
-    manganese: 2.9,
-    copper: 0.9,
-    boron: 0.4,
-    sulfur: 9.8,
-  },
-  "field-c": {
-    healthScore: 85,
-    nitrogen: 82,
-    phosphorus: 70,
-    potassium: 90,
-    ph: 6.8,
-    moisture: 75,
-    organicCarbon: 0.78,
-    sand: 35,
-    silt: 38,
-    clay: 27,
-    ec: 0.52,
-    zinc: 2.1,
-    iron: 9.5,
-    manganese: 4.1,
-    copper: 1.5,
-    boron: 0.8,
-    sulfur: 14.2,
-  },
-}
+import { locationData, getSoilMetricsForLocation, type District } from "@/lib/location-data"
 
 const historicalNPK = [
   { month: "Aug", nitrogen: 60, phosphorus: 40, potassium: 70 },
@@ -165,9 +64,79 @@ function getTrend(val: number, high: number) {
 }
 
 export function SoilAnalysis() {
-  const [selectedField, setSelectedField] = useState("field-a")
+  const [selectedField, setSelectedField] = useState(() => {
+    try {
+      const farm = JSON.parse(localStorage.getItem("agrosmart_farm") || "{}")
+      const crops: string[] = farm.crops
+        ? farm.crops.split(",").map((c: string) => c.trim()).filter(Boolean)
+        : []
+      return crops.length > 0 ? "field-0" : "field-0"
+    } catch { return "field-0" }
+  })
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const data = soilData[selectedField]
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Generate fields from saved fields or farm crops
+  const fields = (() => {
+    try {
+      const savedFields = localStorage.getItem("agrosmart_fields")
+      if (savedFields) {
+        const parsed = JSON.parse(savedFields)
+        if (parsed.length > 0) {
+          return parsed.map((f: any) => ({
+            id: f.id,
+            name: f.crop ? `${f.name} — ${f.crop}` : f.name,
+            area: f.area ? `${f.area} acres` : "—",
+          }))
+        }
+      }
+      const farm = JSON.parse(localStorage.getItem("agrosmart_farm") || "{}")
+      const crops: string[] = farm.crops
+        ? farm.crops.split(",").map((c: string) => c.trim()).filter(Boolean)
+        : []
+      const area = parseFloat(farm.area) || 6.7
+      if (crops.length > 0) {
+        return crops.map((crop, i) => ({
+          id: `field-${i}`,
+          name: `Field ${String.fromCharCode(65 + i)} — ${crop}`,
+          area: `${(area / crops.length).toFixed(1)} ${farm.areaUnit || "acres"}`,
+        }))
+      }
+    } catch {}
+    return [{ id: "field-0", name: "Field A — Main Crop", area: "2.5 acres" }]
+  })()
+  const [selectedCountry, setSelectedCountry] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("agrosmart_farm") || "{}").country || "India" } catch { return "India" }
+  })
+  const [selectedState, setSelectedState] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("agrosmart_farm") || "{}").state || "Karnataka" } catch { return "Karnataka" }
+  })
+  const [selectedDistrict, setSelectedDistrict] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("agrosmart_farm") || "{}").district || "Mandya" } catch { return "Mandya" }
+  })
+  const [countryOpen, setCountryOpen] = useState(false)
+  const [stateOpen, setStateOpen] = useState(false)
+  const [districtOpen, setDistrictOpen] = useState(false)
+  const countryRef = useRef<HTMLDivElement>(null)
+  const stateRef = useRef<HTMLDivElement>(null)
+  const districtRef = useRef<HTMLDivElement>(null)
+
+  const country = locationData.find(c => c.name === selectedCountry) ?? locationData[0]
+  const state = country.states.find(s => s.name === selectedState) ?? country.states[0]
+  const district: District = state.districts.find(d => d.name === selectedDistrict) ?? state.districts[0]
+  const data = getSoilMetricsForLocation(district, selectedField)
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (countryRef.current && !countryRef.current.contains(e.target as Node)) setCountryOpen(false)
+      if (stateRef.current && !stateRef.current.contains(e.target as Node)) setStateOpen(false)
+      if (districtRef.current && !districtRef.current.contains(e.target as Node)) setDistrictOpen(false)
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setDropdownOpen(false)
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
 
   const compositionData = [
     { name: "Sand", value: data.sand, color: "hsl(40,80%,50%)" },
@@ -196,45 +165,135 @@ export function SoilAnalysis() {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
-      {/* Title + Field Selector */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Title + Location + Field Selector */}
+      <div className="flex flex-col gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Soil Analysis</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Comprehensive soil health metrics and nutrient analysis
+            Comprehensive soil health metrics for <span className="text-primary font-medium">{selectedDistrict}, {selectedState}, {selectedCountry}</span>
           </p>
         </div>
 
-        {/* Field Selector */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
-          >
-            <MapPin className="h-4 w-4 text-primary" />
-            {fields.find((f) => f.id === selectedField)?.name}
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          </button>
-          {dropdownOpen && (
-            <div className="absolute right-0 top-full z-20 mt-2 w-56 rounded-xl border border-border/50 bg-card p-1 shadow-xl">
-              {fields.map((field) => (
-                <button
-                  key={field.id}
-                  type="button"
-                  onClick={() => { setSelectedField(field.id); setDropdownOpen(false) }}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${
-                    selectedField === field.id
-                      ? "bg-primary/15 text-primary"
-                      : "text-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  <span>{field.name}</span>
-                  <span className="text-xs text-muted-foreground">{field.area}</span>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Location Selectors */}
+        <div className="flex flex-wrap gap-3">
+          {/* Country */}
+          <div className="relative" ref={countryRef}>
+            <button
+              type="button"
+              onClick={() => setCountryOpen(!countryOpen)}
+              className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <Globe className="h-4 w-4 text-primary" />
+              {selectedCountry}
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {countryOpen && (
+              <div className="absolute left-0 top-full z-30 mt-2 w-48 rounded-xl border border-border/50 bg-card p-1 shadow-xl">
+                {locationData.map(c => (
+                  <button key={c.name} type="button"
+                    onClick={() => {
+                      setSelectedCountry(c.name)
+                      setSelectedState(c.states[0].name)
+                      setSelectedDistrict(c.states[0].districts[0].name)
+                      setCountryOpen(false)
+                    }}
+                    className={`flex w-full rounded-lg px-3 py-2 text-sm transition-colors ${selectedCountry === c.name ? "bg-primary/15 text-primary" : "text-foreground hover:bg-muted/50"}`}
+                  >{c.name}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* State */}
+          <div className="relative" ref={stateRef}>
+            <button
+              type="button"
+              onClick={() => setStateOpen(!stateOpen)}
+              className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <MapPin className="h-4 w-4 text-primary" />
+              {selectedState}
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {stateOpen && (
+              <div className="absolute left-0 top-full z-30 mt-2 max-h-56 w-52 overflow-y-auto rounded-xl border border-border/50 bg-card p-1 shadow-xl">
+                {country.states.map(s => (
+                  <button key={s.name} type="button"
+                    onClick={() => {
+                      setSelectedState(s.name)
+                      setSelectedDistrict(s.districts[0].name)
+                      setStateOpen(false)
+                    }}
+                    className={`flex w-full rounded-lg px-3 py-2 text-sm transition-colors ${selectedState === s.name ? "bg-primary/15 text-primary" : "text-foreground hover:bg-muted/50"}`}
+                  >{s.name}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* District */}
+          <div className="relative" ref={districtRef}>
+            <button
+              type="button"
+              onClick={() => setDistrictOpen(!districtOpen)}
+              className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <MapPin className="h-4 w-4 text-accent" />
+              {selectedDistrict}
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {districtOpen && (
+              <div className="absolute left-0 top-full z-30 mt-2 max-h-56 w-52 overflow-y-auto rounded-xl border border-border/50 bg-card p-1 shadow-xl">
+                {state.districts.map(d => (
+                  <button key={d.name} type="button"
+                    onClick={() => { setSelectedDistrict(d.name); setDistrictOpen(false) }}
+                    className={`flex w-full flex-col rounded-lg px-3 py-2 text-sm transition-colors ${selectedDistrict === d.name ? "bg-primary/15 text-primary" : "text-foreground hover:bg-muted/50"}`}
+                  >
+                    <span>{d.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{d.soilType}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Field Selector */}
+          <div className="relative ml-auto" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+            >
+              <MapPin className="h-4 w-4 text-primary" />
+              {fields.find((f) => f.id === selectedField)?.name}
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {dropdownOpen && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-56 rounded-xl border border-border/50 bg-card p-1 shadow-xl">
+                {fields.map((field) => (
+                  <button key={field.id} type="button"
+                    onClick={() => { setSelectedField(field.id); setDropdownOpen(false) }}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${selectedField === field.id ? "bg-primary/15 text-primary" : "text-foreground hover:bg-muted/50"}`}
+                  >
+                    <span>{field.name}</span>
+                    <span className="text-xs text-muted-foreground">{field.area}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* District info banner */}
+        <div className="rounded-xl bg-primary/5 border border-primary/20 px-4 py-3 flex items-center gap-3">
+          <MapPin className="h-4 w-4 text-primary shrink-0" />
+          <div>
+            <span className="text-sm font-medium text-foreground">{district.soilType}</span>
+            <span className="mx-2 text-muted-foreground">·</span>
+            <span className="text-sm text-muted-foreground">pH {district.phRange[0]}–{district.phRange[1]}</span>
+            <span className="mx-2 text-muted-foreground">·</span>
+            <span className="text-sm text-muted-foreground">{district.notes}</span>
+          </div>
         </div>
       </div>
 

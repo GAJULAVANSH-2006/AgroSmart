@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/components/auth-context"
+import { locationData } from "@/lib/location-data"
 import {
   Settings,
   User,
@@ -21,6 +22,8 @@ import {
   Mail,
   Phone,
   Smartphone,
+  Plus,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -46,34 +49,99 @@ export function SettingsPage() {
   }, [user])
 
   // Farm profile state
-  const [farm, setFarm] = useState({
-    name: "Sharma Farm — Mandya",
-    location: "Mandya, Karnataka",
-    area: "6.7",
-    areaUnit: "acres",
-    crops: "Rice, Tomato, Sugarcane",
-    soilType: "Red Laterite",
+  const [farm, setFarm] = useState(() => {
+    try {
+      const saved = localStorage.getItem("agrosmart_farm")
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return {
+      name: "Sharma Farm — Mandya",
+      location: "Mandya, Karnataka",
+      area: "6.7",
+      areaUnit: "acres",
+      crops: "Rice, Tomato, Sugarcane",
+      soilType: "Red Laterite",
+      country: "India",
+      state: "Karnataka",
+      district: "Mandya",
+    }
   })
 
-  // Notification toggles
-  const [notifications, setNotifications] = useState({
-    weatherAlerts: true,
-    diseaseAlerts: true,
-    marketAlerts: true,
-    soilAlerts: false,
-    emailNotif: true,
-    pushNotif: true,
-    smsNotif: false,
+  // Fields state
+  const [fields, setFields] = useState<{ id: string; name: string; crop: string; area: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem("agrosmart_fields")
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return [
+      { id: "field-0", name: "Field A", crop: "Rice", area: "2.5" },
+    ]
+  })
+
+  const addField = () => {
+    const newField = { id: `field-${Date.now()}`, name: `Field ${String.fromCharCode(65 + fields.length)}`, crop: "", area: "" }
+    setFields([...fields, newField])
+  }
+
+  const removeField = (id: string) => {
+    if (fields.length === 1) return
+    setFields(fields.filter(f => f.id !== id))
+  }
+
+  const updateField = (id: string, key: string, value: string) => {
+    setFields(fields.map(f => f.id === id ? { ...f, [key]: value } : f))
+  }
+  const [notifications, setNotifications] = useState(() => {
+    try {
+      const saved = localStorage.getItem("agrosmart_notifications")
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return {
+      weatherAlerts: true,
+      diseaseAlerts: true,
+      marketAlerts: true,
+      soilAlerts: false,
+      emailNotif: true,
+      pushNotif: true,
+      smsNotif: false,
+    }
   })
 
   // Display preferences
-  const [display, setDisplay] = useState({
-    tempUnit: "celsius" as "celsius" | "fahrenheit",
-    areaUnit: "acres" as "acres" | "hectares",
-    language: "english" as "english" | "hindi" | "kannada" | "tamil" | "telugu",
+  const [display, setDisplay] = useState<{
+    tempUnit: "celsius" | "fahrenheit"
+    areaUnit: "acres" | "hectares"
+    language: "english" | "hindi" | "kannada" | "tamil" | "telugu"
+  }>(() => {
+    try {
+      const saved = localStorage.getItem("agrosmart_display")
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return {
+      tempUnit: "celsius" as "celsius" | "fahrenheit",
+      areaUnit: "acres" as "acres" | "hectares",
+      language: "english" as "english" | "hindi" | "kannada" | "tamil" | "telugu",
+    }
   })
 
   const handleSave = () => {
+    // Persist profile to localStorage so it survives page refresh
+    try {
+      const session = localStorage.getItem("agrosmart_session")
+      if (session) {
+        const parsed = JSON.parse(session)
+        localStorage.setItem(
+          "agrosmart_session",
+          JSON.stringify({ ...parsed, name: profile.name, email: profile.email, phone: profile.phone })
+        )
+      }
+      localStorage.setItem("agrosmart_farm", JSON.stringify(farm))
+      localStorage.setItem("agrosmart_fields", JSON.stringify(fields))
+      localStorage.setItem("agrosmart_notifications", JSON.stringify(notifications))
+      localStorage.setItem("agrosmart_display", JSON.stringify(display))
+    } catch {
+      // ignore
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
   }
@@ -234,15 +302,58 @@ export function SettingsPage() {
             </div>
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Location</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Country</label>
+            <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5">
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={farm.country || "India"}
+                onChange={(e) => {
+                  const c = locationData.find(x => x.name === e.target.value) ?? locationData[0]
+                  setFarm({ ...farm, country: c.name, state: c.states[0].name, district: c.states[0].districts[0].name, location: `${c.states[0].districts[0].name}, ${c.states[0].name}`, soilType: c.states[0].districts[0].soilType })
+                }}
+                className="w-full bg-transparent text-sm text-foreground outline-none"
+              >
+                {locationData.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">State</label>
             <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5">
               <MapPin className="h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                value={farm.location}
-                onChange={(e) => setFarm({ ...farm, location: e.target.value })}
+              <select
+                value={farm.state || "Karnataka"}
+                onChange={(e) => {
+                  const country = locationData.find(x => x.name === (farm.country || "India")) ?? locationData[0]
+                  const s = country.states.find(x => x.name === e.target.value) ?? country.states[0]
+                  setFarm({ ...farm, state: s.name, district: s.districts[0].name, location: `${s.districts[0].name}, ${s.name}`, soilType: s.districts[0].soilType })
+                }}
                 className="w-full bg-transparent text-sm text-foreground outline-none"
-              />
+              >
+                {(locationData.find(c => c.name === (farm.country || "India")) ?? locationData[0]).states.map(s => (
+                  <option key={s.name} value={s.name}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">District</label>
+            <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={farm.district || "Mandya"}
+                onChange={(e) => {
+                  const country = locationData.find(x => x.name === (farm.country || "India")) ?? locationData[0]
+                  const state = country.states.find(x => x.name === (farm.state || "Karnataka")) ?? country.states[0]
+                  const d = state.districts.find(x => x.name === e.target.value) ?? state.districts[0]
+                  setFarm({ ...farm, district: d.name, location: `${d.name}, ${farm.state}`, soilType: d.soilType })
+                }}
+                className="w-full bg-transparent text-sm text-foreground outline-none"
+              >
+                {((locationData.find(c => c.name === (farm.country || "India")) ?? locationData[0]).states.find(s => s.name === (farm.state || "Karnataka")) ?? locationData[0].states[0]).districts.map(d => (
+                  <option key={d.name} value={d.name}>{d.name}</option>
+                ))}
+              </select>
             </div>
           </div>
           <div>
@@ -285,6 +396,72 @@ export function SettingsPage() {
         </div>
       </div>
 
+      {/* Fields Manager */}
+      <div className="glass rounded-2xl p-5">
+        <div className="mb-5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-primary" />
+            <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">My Fields</h2>
+          </div>
+          <button
+            type="button"
+            onClick={addField}
+            className="flex items-center gap-1.5 rounded-xl bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/25 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Field
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {fields.map((field, i) => (
+            <div key={field.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end rounded-xl bg-muted/20 p-3">
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Field Name</label>
+                <input
+                  type="text"
+                  value={field.name}
+                  onChange={(e) => updateField(field.id, "name", e.target.value)}
+                  placeholder="e.g. Field A"
+                  className="w-full rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Crop Type</label>
+                <input
+                  type="text"
+                  value={field.crop}
+                  onChange={(e) => updateField(field.id, "crop", e.target.value)}
+                  placeholder="e.g. Rice"
+                  className="w-full rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Area (acres)</label>
+                <input
+                  type="number"
+                  value={field.area}
+                  onChange={(e) => updateField(field.id, "area", e.target.value)}
+                  placeholder="e.g. 2.5"
+                  min="0"
+                  step="0.1"
+                  className="w-full rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm text-foreground outline-none focus:border-primary/50"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeField(field.id)}
+                disabled={fields.length === 1}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">These fields appear in Soil Analysis and Fertilizer Suggestion.</p>
+      </div>
+
       {/* Notification Preferences */}
       <div className="glass rounded-2xl p-5">
         <div className="mb-5 flex items-center gap-2">
@@ -321,33 +498,6 @@ export function SettingsPage() {
             icon={Leaf}
           />
         </div>
-
-        <div className="mt-5 border-t border-border/30 pt-5">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">Notification Channels</p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Toggle
-              checked={notifications.emailNotif}
-              onChange={(v) => setNotifications({ ...notifications, emailNotif: v })}
-              label="Email"
-              description="Daily digest"
-              icon={Mail}
-            />
-            <Toggle
-              checked={notifications.pushNotif}
-              onChange={(v) => setNotifications({ ...notifications, pushNotif: v })}
-              label="Push"
-              description="Real-time alerts"
-              icon={Smartphone}
-            />
-            <Toggle
-              checked={notifications.smsNotif}
-              onChange={(v) => setNotifications({ ...notifications, smsNotif: v })}
-              label="SMS"
-              description="Critical only"
-              icon={Phone}
-            />
-          </div>
-        </div>
       </div>
 
       {/* Display Preferences */}
@@ -371,27 +521,6 @@ export function SettingsPage() {
             <div className="flex gap-2">
               <RadioOption selected={display.areaUnit === "acres"} value="acres" label="Acres" onClick={() => setDisplay({ ...display, areaUnit: "acres" })} />
               <RadioOption selected={display.areaUnit === "hectares"} value="hectares" label="Hectares" onClick={() => setDisplay({ ...display, areaUnit: "hectares" })} />
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-2 text-sm font-medium text-foreground">Language</p>
-            <div className="flex flex-wrap gap-2">
-              {([
-                ["english", "English"],
-                ["hindi", "हिन्दी"],
-                ["kannada", "ಕನ್ನಡ"],
-                ["tamil", "தமிழ்"],
-                ["telugu", "తెలుగు"],
-              ] as const).map(([val, label]) => (
-                <RadioOption
-                  key={val}
-                  selected={display.language === val}
-                  value={val}
-                  label={label}
-                  onClick={() => setDisplay({ ...display, language: val })}
-                />
-              ))}
             </div>
           </div>
         </div>

@@ -17,6 +17,7 @@ export function SignupPage({ onSignup, onSwitchToLogin }: SignupPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [info, setInfo] = useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,7 +43,12 @@ export function SignupPage({ onSignup, onSwitchToLogin }: SignupPageProps) {
     setIsLoading(false)
 
     if (!result.success) {
-      setError(result.error || "Signup failed")
+      // "Account created" confirmation message — show as info not error
+      if (result.error?.startsWith("Account created")) {
+        setInfo(result.error)
+      } else {
+        setError(result.error || "Signup failed")
+      }
     }
   }
 
@@ -168,6 +174,13 @@ export function SignupPage({ onSignup, onSwitchToLogin }: SignupPageProps) {
                 <button type="button" className="text-primary hover:underline">Privacy Policy</button>
               </span>
             </label>
+
+            {/* Info message (e.g. email confirmation) */}
+            {info && (
+              <div className="rounded-xl bg-primary/10 border border-primary/20 px-4 py-2.5 text-sm text-primary">
+                {info}
+              </div>
+            )}
 
             {/* Error */}
             {error && (

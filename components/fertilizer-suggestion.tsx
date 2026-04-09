@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import {
   Sprout,
   Leaf,
@@ -17,7 +17,7 @@ import {
   CheckCircle2,
 } from "lucide-react"
 
-const crops = [
+const ALL_CROPS = [
   { id: "rice", name: "Rice (Paddy)", icon: "🌾" },
   { id: "wheat", name: "Wheat", icon: "🌾" },
   { id: "cotton", name: "Cotton", icon: "🌿" },
@@ -29,6 +29,38 @@ const crops = [
   { id: "soybean", name: "Soybean", icon: "🫘" },
   { id: "chilli", name: "Chilli", icon: "🌶️" },
 ]
+
+function getCropIcon(name: string) {
+  const match = ALL_CROPS.find(c => name.toLowerCase().includes(c.id))
+  return match?.icon ?? "🌱"
+}
+
+function getUserCrops() {
+  try {
+    // First check fields
+    const fields = JSON.parse(localStorage.getItem("agrosmart_fields") || "[]")
+    const fieldCrops = fields
+      .map((f: any) => f.crop?.trim())
+      .filter(Boolean)
+
+    // Then check farm crops
+    const farm = JSON.parse(localStorage.getItem("agrosmart_farm") || "{}")
+    const farmCrops = farm.crops
+      ? farm.crops.split(",").map((c: string) => c.trim()).filter(Boolean)
+      : []
+
+    // Merge unique
+    const all = [...new Set([...fieldCrops, ...farmCrops])] as string[]
+    if (all.length > 0) {
+      return all.map((name, i) => ({
+        id: name.toLowerCase().replace(/\s+/g, "-"),
+        name,
+        icon: getCropIcon(name),
+      }))
+    }
+  } catch {}
+  return ALL_CROPS
+}
 
 const growthStages = ["Sowing", "Vegetative", "Flowering", "Fruiting", "Harvest"]
 
@@ -108,12 +140,64 @@ const defaultFertData: Record<string, FertilizerRec[]> = {
 }
 
 export function FertilizerSuggestion() {
-  const [selectedCrop, setSelectedCrop] = useState("rice")
+  const [selectedCrop, setSelectedCrop] = useState(() => {
+    try {
+      const fields = JSON.parse(localStorage.getItem("agrosmart_fields") || "[]")
+      if (fields[0]?.crop) return fields[0].crop.toLowerCase().replace(/\s+/g, "-")
+      const farm = JSON.parse(localStorage.getItem("agrosmart_farm") || "{}")
+      if (farm.crops) return farm.crops.split(",")[0].trim().toLowerCase().replace(/\s+/g, "-")
+    } catch {}
+    return "rice"
+  })
   const [selectedStage, setSelectedStage] = useState("Sowing")
   const [cropDropdownOpen, setCropDropdownOpen] = useState(false)
-  const [farmArea, setFarmArea] = useState(2.5)
+  const cropDropdownRef = useRef<HTMLDivElement>(null)
+  const [farmArea, setFarmArea] = useState(() => {
+    try {
+      const fields: { crop: string; area: string }[] = JSON.parse(localStorage.getItem("agrosmart_fields") || "[]")
+      const defaultCrop = (() => {
+        try {
+          const f = fields[0]
+          return f?.crop?.trim().toLowerCase().replace(/\s+/g, "-") || "rice"
+        } catch { return "rice" }
+      })()
+      const match = fields.find(f => f.crop?.trim().toLowerCase().replace(/\s+/g, "-") === defaultCrop)
+      if (match && parseFloat(match.area) > 0) return parseFloat(match.area)
+      const farm = JSON.parse(localStorage.getItem("agrosmart_farm") || "{}")
+      return parseFloat(farm.area) || 2.5
+    } catch { return 2.5 }
+  })
   const [showOrganic, setShowOrganic] = useState<"all" | "chemical" | "organic">("all")
 
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (cropDropdownRef.current && !cropDropdownRef.current.contains(e.target as Node)) {
+        setCropDropdownOpen(false)
+      }
+    }
+    if (cropDropdownOpen) document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [cropDropdownOpen])
+
+  const crops = getUserCrops()
+
+  // Update farm area when selected crop changes to match that field's area
+  useEffect(() => {
+    try {
+      const fields: { crop: string; area: string }[] = JSON.parse(localStorage.getItem("agrosmart_fields") || "[]")
+      // Find field whose crop name matches selectedCrop id
+      const match = fields.find(f => {
+        const id = f.crop?.trim().toLowerCase().replace(/\s+/g, "-")
+        return id === selectedCrop
+      })
+      if (match && parseFloat(match.area) > 0) {
+        setFarmArea(parseFloat(match.area))
+      } else {
+        const farm = JSON.parse(localStorage.getItem("agrosmart_farm") || "{}")
+        setFarmArea(parseFloat(farm.area) || 2.5)
+      }
+    } catch {}
+  }, [selectedCrop])
   const cropFertData = fertilizerData[selectedCrop] || defaultFertData
   const stageData = cropFertData[selectedStage] || defaultFertData[selectedStage] || []
   const filteredData = showOrganic === "all" ? stageData : stageData.filter(f => f.type === showOrganic)
@@ -138,7 +222,7 @@ export function FertilizerSuggestion() {
       {/* Crop + Stage Selectors */}
       <div className="flex flex-col gap-4 sm:flex-row">
         {/* Crop Selector */}
-        <div className="relative flex-1">
+        <div className="relative flex-1" ref={cropDropdownRef}>
           <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Select Crop
           </label>
